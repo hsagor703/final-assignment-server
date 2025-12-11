@@ -84,7 +84,11 @@ async function run() {
     });
 
     app.get("/hrManager", async (req, res) => {
-      const result = await hrManagerCollection.find().toArray();
+       const email = req.query.email;
+      const query = {
+        email: email,
+      };
+      const result = await hrManagerCollection.findOne(query);
       res.send(result);
     });
 
