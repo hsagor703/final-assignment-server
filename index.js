@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 const port = process.env.PORT || 3000;
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
@@ -55,13 +55,13 @@ async function run() {
     const packagesCollection = db.collection("Packages");
     const assetsCollection = db.collection("assets");
 
-    // get all packagesCollection
+    // packagesCollection
     app.get("/packages", async (req, res) => {
       const result = await packagesCollection.find().toArray();
       res.send(result);
     });
 
-    // save employee data from mongo db
+    //  employee collection
     app.post("/employee", async (req, res) => {
       const employeeInfo = req.body;
       const result = await employeeCollection.insertOne(employeeInfo);
@@ -77,7 +77,7 @@ async function run() {
       res.send(result);
     });
 
-    // save hr data from mongo db
+    // hrManager collection
     app.post("/hrManager", async (req, res) => {
       const HRInfo = req.body;
       const result = await hrManagerCollection.insertOne(HRInfo);
@@ -93,15 +93,52 @@ async function run() {
       res.send(result);
     });
 
-    // save assets data from mongodb
+    // assets collection
     app.post("/assets", async (req, res) => {
       const productInfo = req.body;
       const result = await assetsCollection.insertOne(productInfo);
       res.send(result);
     });
 
+    app.patch("/assets/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = {
+        _id: new ObjectId(id),
+      };
+
+      const { productName, productImage, productType, productQuantity } =
+        req.body;
+      const updated = {
+        $set: {
+          productImage,
+          productName,
+          productType,
+          productQuantity,
+        },
+      };
+
+      const result = await assetsCollection.updateOne(query, updated);
+      res.send(result);
+    });
+
     app.get("/assets", async (req, res) => {
-      const result = await assetsCollection.find().toArray();
+      const search = req.query.search;
+      const query = {};
+      if (search) {
+        query.productName = { $regex: search, $options: "i" };
+      }
+
+      const result = await assetsCollection
+        .find(query)
+        .sort({ dateAdded: -1 })
+        .toArray();
+      res.send(result);
+    });
+
+    app.delete("/assets/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await assetsCollection.deleteOne(query);
       res.send(result);
     });
 
