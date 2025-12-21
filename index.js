@@ -69,6 +69,61 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/employee/companies/:email", async (req, res) => {
+      const email = req.params.email;
+
+      const employee = await employeeCollection.findOne({ email });
+
+      const companies = employee.connectedCompany
+        .filter((c) => c.status === "connected")
+        .map((c) => ({
+          hrCompanyName: c.hrCompanyName,
+          HRManagerUid: c.HRManagerUid,
+        }));
+
+      res.send(companies);
+    });
+
+    app.get("/team/:hrUid", async (req, res) => {
+      const hrUid = req.params.hrUid;
+
+      const team = await employeeCollection
+        .find({
+          connectedCompany: {
+            $elemMatch: {
+              HRManagerUid: hrUid,
+              status: "connected",
+            },
+          },
+        })
+        .toArray();
+
+      res.send(team);
+    });
+
+    app.get("/team/birthdays/:hrUid", async (req, res) => {
+      const hrUid = req.params.hrUid;
+      const currentMonth = new Date().getMonth() + 1;
+
+      const employees = await employeeCollection
+        .find({
+          connectedCompany: {
+            $elemMatch: {
+              HRManagerUid: hrUid,
+              status: "connected",
+            },
+          },
+        })
+        .toArray();
+
+      const birthdays = employees.filter((emp) => {
+        const month = new Date(emp.dateOfBirth).getMonth() + 1;
+        return month === currentMonth;
+      });
+
+      res.send(birthdays);
+    });
+
     app.get("/employee", async (req, res) => {
       const { HRManagerUid, search, email } = req.query;
       const query = {};
@@ -78,7 +133,7 @@ async function run() {
       }
 
       if (HRManagerUid) {
-        query.HRManagerUid = HRManagerUid;
+        query.connectedCompany = { $elemMatch: { HRManagerUid: HRManagerUid } };
       }
       if (search) {
         query.name = { $regex: search, $options: "i" };
@@ -105,13 +160,21 @@ async function run() {
         hrSubscribtion,
         currentEmployees,
         hrAddedNewEmployee,
+        hrCompanyName,
+        status,
       } = req.body;
       const query = { _id: new ObjectId(req.params.id) };
       const addInfo = {
-        $set: {
-          HRManagerUid,
-          assetCount,
-          joinDate,
+        $addToSet: {
+          connectedCompany: {
+            HRManagerUid,
+            hrManagerId,
+            hrEmail,
+            assetCount,
+            joinDate,
+            hrCompanyName,
+            status,
+          },
         },
       };
 
@@ -130,8 +193,15 @@ async function run() {
     });
 
     app.delete("/employee/:id", async (req, res) => {
+      const id = req.query.hrId;
       const query = { _id: new ObjectId(req.params.id) };
       const result = await employeeCollection.deleteOne(query);
+      if (result.deletedCount === 1) {
+        await hrManagerCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $inc: { currentEmployees: -1 } }
+        );
+      }
       res.send(result);
     });
 
@@ -146,6 +216,11 @@ async function run() {
       const email = req.query.email;
       const query = { email };
       const result = await hrManagerCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.get("/allHrManager", async (req, res) => {
+      const result = await hrManagerCollection.find().toArray();
       res.send(result);
     });
 
@@ -246,7 +321,10 @@ async function run() {
         requestedEmail,
         requestedAsset,
         requestedId,
+        hrEmail,
       } = req.body;
+      // console.log(req.body);
+      // return
       const query = { _id: new ObjectId(req.params.id) };
       const updateStatus = {
         $set: {
@@ -266,11 +344,14 @@ async function run() {
         const result = await assetsCollection.updateOne(query, updateQuantity);
         console.log(result.modifiedCount);
         if (result.modifiedCount === 1) {
-          const updateCount = requestedAsset + 1;
-          const query = { email: requestedEmail };
+          // const updateCount = requestedAsset + 1;
+          const query = {
+            _id: new ObjectId(requestedId),
+            "connectedCompany.hrEmail": hrEmail,
+          };
           const updateAsset = {
-            $set: {
-              assetCount: updateCount,
+            $inc: {
+              "connectedCompany.$.assetCount": +1,
             },
           };
           const result = await employeeCollection.updateOne(query, updateAsset);
